@@ -9,13 +9,40 @@ type TrickNode = {
   x: number; y: number; type: NodeType; prereqs: string[]; branch?: Branch
 }
 
-// Extra padding so nodes never clip edges
-const PAD = 30
-const W = 900 + PAD * 2
-const H = 540
-function fy(y: number) { return H - y - PAD }
+// Branch view uses its own simple centered layout per branch
+// Full tree uses the wide layout with pan/zoom
 
-const ALL_NODES: TrickNode[] = [
+const BRANCHES: Branch[] = ["draaien","balans","springen","obstakels","flips","scoop","stances","transition"]
+
+// Core skills per branch
+const BRANCH_CORES: Record<Branch, { id: string; label: string; sublabel?: string }[]> = {
+  draaien:    [{ id: "rotatie", label: "Rotatie" }, { id: "contrarotatie", label: "Contra-rotatie" }],
+  balans:     [{ id: "voor-achter", label: "Voor-Achter" }, { id: "tip-hielen", label: "Tip-Hielen" }, { id: "hoog-laag", label: "Hoog-Laag" }],
+  springen:   [{ id: "sprong", label: "Sprong" }, { id: "ollie", label: "Ollie" }],
+  obstakels:  [{ id: "grind", label: "Grind" }, { id: "slide", label: "Slide" }],
+  flips:      [{ id: "kickflip", label: "Kickflip" }, { id: "heelflip", label: "Heelflip" }],
+  scoop:      [{ id: "scoop-core", label: "Scoop" }],
+  stances:    [{ id: "nollie", label: "Nollie" }, { id: "switch", label: "Switch" }, { id: "fakie", label: "Fakie" }],
+  transition: [{ id: "trans-core", label: "Transition skills" }],
+}
+
+const FOUNDATIONS = [
+  { id: "stilstaand", label: "Basishouding", sublabel: "stilstaand" },
+  { id: "rijdend",    label: "Basishouding", sublabel: "rijdend" },
+  { id: "rolhouding", label: "Rolhouding" },
+  { id: "durven",     label: "Durven" },
+]
+
+// Full tree layout
+const PAD = 30
+const FW = 900 + PAD * 2
+const FH = 540
+function fy(y: number) { return FH - y - PAD }
+const TRUNK_Y_VAL = 140
+const TRUNK_X = 450 + PAD
+const typeRadius: Record<NodeType, number> = { foundation: 22, branch: 18, core: 13 }
+
+const FULL_NODES: TrickNode[] = [
   { id: "stilstaand",    label: "Basishouding", sublabel: "stilstaand", x: 160+PAD, y: 40,  type: "foundation", prereqs: [] },
   { id: "rijdend",       label: "Basishouding", sublabel: "rijdend",    x: 340+PAD, y: 40,  type: "foundation", prereqs: [] },
   { id: "rolhouding",    label: "Rolhouding",                           x: 560+PAD, y: 40,  type: "foundation", prereqs: [] },
@@ -46,29 +73,104 @@ const ALL_NODES: TrickNode[] = [
   { id: "trans-core",    label: "Transition", sublabel: "skills",       x: 845+PAD, y: 390, type: "core", prereqs: ["transition"] },
 ]
 
-const BRANCHES: Branch[] = ["draaien","balans","springen","obstakels","flips","scoop","stances","transition"]
-const TRUNK_Y_VAL = 140
-const TRUNK_X = 450 + PAD
-const typeRadius: Record<NodeType, number> = { foundation: 22, branch: 18, core: 13 }
-
 function buildPath(x1: number, y1: number, x2: number, y2: number) {
   const my = (y1 + y2) / 2
   return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`
 }
 
-function TreeSVG({ nodes, selectedBranch, unlocked, onNodeClick }: {
-  nodes: TrickNode[]; selectedBranch: Branch | null
-  unlocked: Set<string>; onNodeClick: (n: TrickNode) => void
+// Focused single-branch SVG — fully self-contained and centered
+function BranchFocusView({ branch, unlocked, onNodeClick, onBranchClick, selectedBranch }: {
+  branch: Branch
+  unlocked: Set<string>
+  onNodeClick: (id: string) => void
+  onBranchClick: (b: Branch) => void
+  selectedBranch: Branch | null
 }) {
-  const posMap: Record<string, { x: number; y: number }> = {}
-  nodes.forEach(n => { posMap[n.id] = { x: n.x, y: fy(n.y) } })
-  const TRUNK_Y = fy(TRUNK_Y_VAL)
-  const foundations = nodes.filter(n => n.type === "foundation")
-  const branches = nodes.filter(n => n.type === "branch")
-  const cores = nodes.filter(n => n.type === "core")
+  const cores = BRANCH_CORES[branch]
+  const col = branchColor[branch]
+  const W = 340
+  const H = 320
+  const cx = W / 2
+
+  // Layout: foundations at bottom, branch in middle, cores at top
+  const foundY = H - 40
+  const branchY = H / 2
+  const coreY = 60
+  const trunkY = branchY + 30
+
+  // Space foundations evenly
+  const fSpacing = W / (FOUNDATIONS.length + 1)
+  const fPositions = FOUNDATIONS.map((_, i) => (i + 1) * fSpacing)
+
+  // Space cores evenly
+  const cSpacing = W / (cores.length + 1)
+  const cPositions = cores.map((_, i) => (i + 1) * cSpacing)
+
+  const isSelected = selectedBranch === branch
 
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block">
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="block">
+      {/* Foundation → trunk lines */}
+      {fPositions.map((fx, i) => {
+        const lit = unlocked.has(FOUNDATIONS[i].id)
+        return <path key={`ft-${i}`} d={buildPath(fx, foundY - 20, cx, trunkY)} fill="none" stroke={lit ? "#BA7517" : "#3f3f46"} strokeWidth={lit ? 2 : 1} strokeDasharray={lit ? undefined : "4 3"} />
+      })}
+
+      {/* Branch → core lines */}
+      {cPositions.map((corex, i) => (
+        <path key={`bc-${i}`} d={buildPath(cx, branchY - 20, corex, coreY + 13)} fill="none" stroke={col} strokeWidth={isSelected ? 2 : 1} strokeOpacity={isSelected ? 1 : 0.5} />
+      ))}
+
+      {/* Trunk dot */}
+      <circle cx={cx} cy={trunkY} r={3} fill="#52525b" />
+
+      {/* Foundation nodes */}
+      {FOUNDATIONS.map((f, i) => {
+        const lit = unlocked.has(f.id)
+        return (
+          <g key={f.id} transform={`translate(${fPositions[i]}, ${foundY})`}
+            onClick={() => onNodeClick(f.id)} style={{ cursor: "pointer" }}>
+            <circle r={18} fill={lit ? "#BA7517" : "#52525b"} fillOpacity={lit ? 1 : 0.2} stroke={lit ? "#BA7517" : "#52525b"} strokeWidth={1.5} />
+            {lit && <text y="1" textAnchor="middle" fontSize="8" fill="white" dominantBaseline="middle">✓</text>}
+            <text y={-26} textAnchor="middle" fontSize="8" fill="#a1a1aa">{f.label}</text>
+            {f.sublabel && <text y={-16} textAnchor="middle" fontSize="8" fill="#a1a1aa">{f.sublabel}</text>}
+          </g>
+        )
+      })}
+
+      {/* Branch node */}
+      <g transform={`translate(${cx}, ${branchY})`} onClick={() => onBranchClick(branch)} style={{ cursor: "pointer" }}>
+        {isSelected && <circle r={26} fill="none" stroke={col} strokeWidth="2" opacity={0.4} />}
+        <circle r={22} fill={col} fillOpacity={isSelected ? 1 : 0.7} stroke={col} strokeWidth={1.5} />
+        <text y="1" textAnchor="middle" fontSize="10" fill="white" dominantBaseline="middle" fontWeight="bold">
+          {branchLabel[branch]}
+        </text>
+      </g>
+
+      {/* Core nodes */}
+      {cores.map((core, i) => (
+        <g key={core.id} transform={`translate(${cPositions[i]}, ${coreY})`} style={{ cursor: "default" }}>
+          <circle r={13} fill={col} fillOpacity={0.25} stroke={col} strokeWidth={1.5} />
+          <text y={-20} textAnchor="middle" fontSize="9" fill="#a1a1aa">{core.label}</text>
+          {core.sublabel && <text y={-10} textAnchor="middle" fontSize="9" fill="#a1a1aa">{core.sublabel}</text>}
+        </g>
+      ))}
+    </svg>
+  )
+}
+
+function FullTreeSVG({ selectedBranch, unlocked, onNodeClick }: {
+  selectedBranch: Branch | null; unlocked: Set<string>; onNodeClick: (n: TrickNode) => void
+}) {
+  const posMap: Record<string, { x: number; y: number }> = {}
+  FULL_NODES.forEach(n => { posMap[n.id] = { x: n.x, y: fy(n.y) } })
+  const TRUNK_Y = fy(TRUNK_Y_VAL)
+  const foundations = FULL_NODES.filter(n => n.type === "foundation")
+  const branches = FULL_NODES.filter(n => n.type === "branch")
+  const cores = FULL_NODES.filter(n => n.type === "core")
+
+  return (
+    <svg width={FW} height={FH} viewBox={`0 0 ${FW} ${FH}`} className="block">
       {foundations.map(n => {
         const p = posMap[n.id]; if (!p) return null
         const lit = unlocked.has(n.id)
@@ -81,25 +183,23 @@ function TreeSVG({ nodes, selectedBranch, unlocked, onNodeClick }: {
         return <path key={`tb-${n.id}`} d={buildPath(TRUNK_X, TRUNK_Y, c.x, c.y + typeRadius.branch)} fill="none" stroke={col} strokeWidth={isSelected ? 3 : 1.5} strokeOpacity={isSelected ? 1 : 0.4} />
       })}
       {cores.map(n => {
-        const c = posMap[n.id]; const parentId = n.prereqs[0]; const p = posMap[parentId]
+        const c = posMap[n.id]; const p = posMap[n.prereqs[0]]
         if (!p || !c) return null
-        const parentNode = nodes.find(nd => nd.id === parentId)
+        const parentNode = FULL_NODES.find(nd => nd.id === n.prereqs[0])
         const col = parentNode?.branch ? branchColor[parentNode.branch] : "#3f3f46"
         const isSelected = parentNode?.branch && selectedBranch === parentNode.branch
         return <path key={`bc-${n.id}`} d={buildPath(p.x, p.y - typeRadius.branch, c.x, c.y + typeRadius.core)} fill="none" stroke={col} strokeWidth={isSelected ? 2 : 1} strokeOpacity={isSelected ? 1 : 0.3} />
       })}
       <circle cx={TRUNK_X} cy={TRUNK_Y} r={4} fill="#52525b" />
-      {nodes.map(n => {
+      {FULL_NODES.map(n => {
         const pos = posMap[n.id]; if (!pos) return null
         const { x, y } = pos
-        const col = n.branch
-          ? (selectedBranch === n.branch ? branchColor[n.branch] : branchColor[n.branch] + "80")
-          : (unlocked.has(n.id) ? "#BA7517" : "#52525b")
+        const col = n.branch ? (selectedBranch === n.branch ? branchColor[n.branch] : branchColor[n.branch] + "80") : (unlocked.has(n.id) ? "#BA7517" : "#52525b")
         const r = typeRadius[n.type]
         const isSelected = n.branch && selectedBranch === n.branch
         return (
           <g key={n.id} transform={`translate(${x},${y})`} onClick={() => onNodeClick(n)} style={{ cursor: "pointer" }}>
-            {isSelected && <circle r={r + 6} fill="none" stroke={branchColor[n.branch!]} strokeWidth="2" opacity={0.5} />}
+            {isSelected && <circle r={r + 6} fill="none" stroke={n.branch ? branchColor[n.branch] : "#fff"} strokeWidth="2" opacity={0.5} />}
             <circle r={r} fill={col} fillOpacity={n.branch ? (isSelected ? 1 : 0.6) : (unlocked.has(n.id) ? 1 : 0.18)} stroke={col} strokeWidth={1.5} />
             {unlocked.has(n.id) && !n.branch && <text y="1" textAnchor="middle" fontSize="8" fill="white" dominantBaseline="middle">✓</text>}
             <text y={-(r + 7)} textAnchor="middle" fontSize="9" fill="#a1a1aa">{n.label}</text>
@@ -119,54 +219,39 @@ export default function TrickTree() {
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
 
-  // refs for gesture tracking
   const isPinching = useRef(false)
   const lastDist = useRef(0)
   const dragStart = useRef<{ x: number; y: number } | null>(null)
   const panStart = useRef({ x: 0, y: 0 })
-  const moved = useRef(false) // distinguish tap from drag
 
   function resetView() { setPan({ x: 0, y: 0 }); setScale(1) }
 
-  function handleNodeClick(node: TrickNode) {
+  function handleFullNodeClick(node: TrickNode) {
     if (node.branch) setSelectedBranch(prev => prev === node.branch ? null : node.branch!)
     else setUnlocked(prev => { const n = new Set(prev); n.has(node.id) ? n.delete(node.id) : n.add(node.id); return n })
   }
 
   const onTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2) {
-      e.preventDefault()
-      isPinching.current = true
-      dragStart.current = null
-      lastDist.current = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      )
+      e.preventDefault(); isPinching.current = true; dragStart.current = null
+      lastDist.current = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
     } else if (e.touches.length === 1 && !isPinching.current) {
       dragStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
       panStart.current = { ...pan }
-      moved.current = false
     }
   }, [pan])
 
   const onTouchMove = useCallback((e: React.TouchEvent) => {
     e.preventDefault()
     if (e.touches.length === 2 && isPinching.current) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      )
-      const ratio = dist / lastDist.current
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
+      const dampened = 1 + (dist / lastDist.current - 1) * 0.7
       lastDist.current = dist
-      // Dampen zoom slightly so it's less jumpy
-      const dampened = 1 + (ratio - 1) * 0.7
       setScale(prev => Math.min(Math.max(prev * dampened, 0.35), 3))
     } else if (e.touches.length === 1 && dragStart.current && !isPinching.current) {
-      const dx = e.touches[0].clientX - dragStart.current.x
-      const dy = e.touches[0].clientY - dragStart.current.y
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved.current = true
-      // Dampen pan so it doesn't overshoot
-      setPan({ x: panStart.current.x + dx * 0.85, y: panStart.current.y + dy * 0.85 })
+      const dx = (e.touches[0].clientX - dragStart.current.x) * 0.85
+      const dy = (e.touches[0].clientY - dragStart.current.y) * 0.85
+      setPan({ x: panStart.current.x + dx, y: panStart.current.y + dy })
     }
   }, [])
 
@@ -181,36 +266,24 @@ export default function TrickTree() {
   }, [])
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
-    dragStart.current = { x: e.clientX, y: e.clientY }
-    panStart.current = { ...pan }
-    moved.current = false
+    dragStart.current = { x: e.clientX, y: e.clientY }; panStart.current = { ...pan }
   }, [pan])
-
   const onMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragStart.current) return
-    const dx = e.clientX - dragStart.current.x
-    const dy = e.clientY - dragStart.current.y
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved.current = true
-    setPan({ x: panStart.current.x + dx, y: panStart.current.y + dy })
+    setPan({ x: panStart.current.x + (e.clientX - dragStart.current.x), y: panStart.current.y + (e.clientY - dragStart.current.y) })
   }, [])
-
   const onMouseUp = useCallback(() => { dragStart.current = null }, [])
-
-  const branchNodes = ALL_NODES.filter(n =>
-    n.type === "foundation" || n.id === activeBranch || n.prereqs.includes(activeBranch)
-  )
 
   const selectedTricks = selectedBranch ? getTricksByBranch(selectedBranch) : []
   const tricksByLevel = selectedTricks.reduce((acc, t) => {
-    if (!acc[t.level]) acc[t.level] = []
-    acc[t.level].push(t)
-    return acc
+    if (!acc[t.level]) acc[t.level] = []; acc[t.level].push(t); return acc
   }, {} as Record<number, typeof selectedTricks>)
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
-      <div className="max-w-6xl mx-auto px-2 py-4 space-y-3">
+      <div className="max-w-6xl mx-auto px-3 py-4 space-y-3">
 
+        {/* Mode toggle */}
         <div className="flex items-center gap-2">
           <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1">
             {(["branch","full"] as const).map(m => (
@@ -224,8 +297,9 @@ export default function TrickTree() {
           )}
         </div>
 
+        {/* Branch pills */}
         {mode === "branch" && (
-          <div className="flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: "touch" }}>
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {BRANCHES.map(b => (
               <button key={b} onClick={() => { setActiveBranch(b); setSelectedBranch(null) }}
                 className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-all"
@@ -241,57 +315,41 @@ export default function TrickTree() {
         <div className="flex gap-4 items-start">
           <div className="flex-1 min-w-0">
             {mode === "branch" ? (
-              <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-                <TreeSVG
-                  nodes={branchNodes} selectedBranch={activeBranch}
+              <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-4">
+                <BranchFocusView
+                  branch={activeBranch}
                   unlocked={unlocked}
-                  onNodeClick={n => {
-                    if (n.branch) setSelectedBranch(prev => prev === n.branch ? null : n.branch!)
-                    else setUnlocked(prev => { const nx = new Set(prev); nx.has(n.id) ? nx.delete(n.id) : nx.add(n.id); return nx })
-                  }}
+                  onNodeClick={id => setUnlocked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })}
+                  onBranchClick={b => setSelectedBranch(prev => prev === b ? null : b)}
+                  selectedBranch={selectedBranch}
                 />
               </div>
             ) : (
               <div
                 className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden select-none relative"
-                style={{
-                  height: H,
-                  // Block page scroll when touching inside this box
-                  touchAction: "none",
-                  cursor: dragStart.current ? "grabbing" : "grab",
-                }}
-                onTouchStart={onTouchStart}
-                onTouchMove={onTouchMove}
-                onTouchEnd={onTouchEnd}
-                onWheel={onWheel}
-                onMouseDown={onMouseDown}
-                onMouseMove={onMouseMove}
-                onMouseUp={onMouseUp}
-                onMouseLeave={onMouseUp}
+                style={{ height: FH, touchAction: "none", cursor: dragStart.current ? "grabbing" : "grab" }}
+                onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+                onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
+                onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
               >
                 <div style={{
-                  position: "absolute", top: 0, left: 0,
+                  position: "absolute", top: 0, left: 0, width: FW, height: FH,
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
-                  transformOrigin: "center center",
-                  width: W, height: H,
-                  willChange: "transform",
-                  pointerEvents: "auto",
+                  transformOrigin: "center center", willChange: "transform"
                 }}>
-                  <TreeSVG nodes={ALL_NODES} selectedBranch={selectedBranch} unlocked={unlocked} onNodeClick={handleNodeClick} />
+                  <FullTreeSVG selectedBranch={selectedBranch} unlocked={unlocked} onNodeClick={handleFullNodeClick} />
                 </div>
-                <div className="absolute bottom-2 right-3 text-xs text-zinc-600 pointer-events-none">
-                  Pinch · scroll · drag
-                </div>
+                <div className="absolute bottom-2 right-3 text-xs text-zinc-600 pointer-events-none">Pinch · scroll · drag</div>
               </div>
             )}
           </div>
 
+          {/* Side panel */}
           {selectedBranch && (
             <div className="w-64 flex-shrink-0">
               <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden sticky top-4">
                 <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between"
-                  style={{ borderLeftWidth: 3, borderLeftColor: branchColor[selectedBranch] }}
-                >
+                  style={{ borderLeftWidth: 3, borderLeftColor: branchColor[selectedBranch] }}>
                   <div>
                     <h3 className="font-bold text-sm">{branchLabel[selectedBranch]}</h3>
                     <p className="text-zinc-500 text-xs">{selectedTricks.length} tricks</p>
@@ -326,7 +384,7 @@ export default function TrickTree() {
 
         <div className="flex flex-wrap gap-4 px-1">
           <div className="flex items-center gap-2 text-xs text-zinc-400"><div className="w-2.5 h-2.5 rounded-full bg-amber-600" />Foundation</div>
-          <div className="flex items-center gap-2 text-xs text-zinc-400"><div className="w-2.5 h-2.5 rounded-full bg-blue-500" />Branch</div>
+          <div className="flex items-center gap-2 text-xs text-zinc-400"><div className="w-2.5 h-2.5 rounded-full" style={{ background: branchColor[activeBranch] }} />Branch</div>
           <div className="flex items-center gap-2 text-xs text-zinc-400"><div className="w-2.5 h-2.5 rounded-full bg-green-500" />Core skill</div>
         </div>
       </div>
