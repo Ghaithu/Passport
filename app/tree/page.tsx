@@ -86,7 +86,7 @@ function BranchFocusView({ branch, unlocked, onNodeClick, onBranchClick, selecte
   onBranchClick: (b: Branch) => void
   selectedBranch: Branch | null
 }) {
-  const cores = BRANCH_CORES[branch]
+  const cores = BRANCH_CORES[branch as Exclude<Branch, "foundation">]
   const col = branchColor[branch]
   const W = 340
   const H = 320
