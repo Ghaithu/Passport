@@ -4,8 +4,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 
 const tabs = [
-  { label: "🛹 Passport", href: "/" },
-  { label: "🌳 Tree",     href: "/tree" },
+  { label: "🎫 Passport", href: "/" },
+  { label: "🕸️ Tree",     href: "/tree" },
 ]
 
 export default function Navbar() {
