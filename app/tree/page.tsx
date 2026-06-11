@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useCallback } from "react"
 import { getTricksByBranch, branchColor, branchLabel, levels, isLevelPassed, type Branch } from "@/lib/tricks"
 
 type NodeType = "foundation" | "branch" | "core"
@@ -9,44 +9,46 @@ type TrickNode = {
   x: number; y: number; type: NodeType; prereqs: string[]; branch?: Branch
 }
 
-const W = 900
-const H = 520
-function fy(y: number) { return H - y }
+// Extra padding so nodes never clip edges
+const PAD = 30
+const W = 900 + PAD * 2
+const H = 540
+function fy(y: number) { return H - y - PAD }
 
 const ALL_NODES: TrickNode[] = [
-  { id: "stilstaand",    label: "Basishouding", sublabel: "stilstaand", x: 160, y: 40,  type: "foundation", prereqs: [] },
-  { id: "rijdend",       label: "Basishouding", sublabel: "rijdend",    x: 340, y: 40,  type: "foundation", prereqs: [] },
-  { id: "rolhouding",    label: "Rolhouding",                           x: 560, y: 40,  type: "foundation", prereqs: [] },
-  { id: "durven",        label: "Durven",                               x: 740, y: 40,  type: "foundation", prereqs: [] },
-  { id: "draaien",       label: "Draaien",                              x: 55,  y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "draaien" },
-  { id: "balans",        label: "Balans /", sublabel: "Zwaartepunt",    x: 165, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "balans" },
-  { id: "springen",      label: "Springen",                             x: 280, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "springen" },
-  { id: "obstakels",     label: "Obstakels",                            x: 400, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "obstakels" },
-  { id: "flips",         label: "Flips",                                x: 515, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "flips" },
-  { id: "scoop",         label: "Scoop",                                x: 625, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "scoop" },
-  { id: "stances",       label: "Stances",                              x: 735, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "stances" },
-  { id: "transition",    label: "Transition",                           x: 845, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "transition" },
-  { id: "rotatie",       label: "Rotatie",                              x: 25,  y: 390, type: "core", prereqs: ["draaien"] },
-  { id: "contrarotatie", label: "Contra-", sublabel: "rotatie",         x: 90,  y: 390, type: "core", prereqs: ["draaien"] },
-  { id: "voor-achter",   label: "Voor-Achter",                          x: 140, y: 390, type: "core", prereqs: ["balans"] },
-  { id: "tip-hielen",    label: "Tip-Hielen",                           x: 200, y: 390, type: "core", prereqs: ["balans"] },
-  { id: "hoog-laag",     label: "Hoog-Laag",                            x: 170, y: 470, type: "core", prereqs: ["balans"] },
-  { id: "sprong",        label: "Sprong",                               x: 250, y: 390, type: "core", prereqs: ["springen"] },
-  { id: "ollie",         label: "Ollie",                                x: 315, y: 390, type: "core", prereqs: ["springen"] },
-  { id: "grind",         label: "Grind",                                x: 370, y: 390, type: "core", prereqs: ["obstakels"] },
-  { id: "slide",         label: "Slide",                                x: 435, y: 390, type: "core", prereqs: ["obstakels"] },
-  { id: "kickflip",      label: "Kickflip",                             x: 490, y: 390, type: "core", prereqs: ["flips"] },
-  { id: "heelflip",      label: "Heelflip",                             x: 555, y: 390, type: "core", prereqs: ["flips"] },
-  { id: "scoop-core",    label: "Scoop",                                x: 625, y: 390, type: "core", prereqs: ["scoop"] },
-  { id: "nollie",        label: "Nollie",                               x: 695, y: 390, type: "core", prereqs: ["stances"] },
-  { id: "switch",        label: "Switch",                               x: 755, y: 390, type: "core", prereqs: ["stances"] },
-  { id: "fakie",         label: "Fakie",                                x: 725, y: 470, type: "core", prereqs: ["stances"] },
-  { id: "trans-core",    label: "Transition", sublabel: "skills",       x: 845, y: 390, type: "core", prereqs: ["transition"] },
+  { id: "stilstaand",    label: "Basishouding", sublabel: "stilstaand", x: 160+PAD, y: 40,  type: "foundation", prereqs: [] },
+  { id: "rijdend",       label: "Basishouding", sublabel: "rijdend",    x: 340+PAD, y: 40,  type: "foundation", prereqs: [] },
+  { id: "rolhouding",    label: "Rolhouding",                           x: 560+PAD, y: 40,  type: "foundation", prereqs: [] },
+  { id: "durven",        label: "Durven",                               x: 740+PAD, y: 40,  type: "foundation", prereqs: [] },
+  { id: "draaien",       label: "Draaien",                              x: 55+PAD,  y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "draaien" },
+  { id: "balans",        label: "Balans /", sublabel: "Zwaartepunt",    x: 165+PAD, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "balans" },
+  { id: "springen",      label: "Springen",                             x: 280+PAD, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "springen" },
+  { id: "obstakels",     label: "Obstakels",                            x: 400+PAD, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "obstakels" },
+  { id: "flips",         label: "Flips",                                x: 515+PAD, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "flips" },
+  { id: "scoop",         label: "Scoop",                                x: 625+PAD, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "scoop" },
+  { id: "stances",       label: "Stances",                              x: 735+PAD, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "stances" },
+  { id: "transition",    label: "Transition",                           x: 845+PAD, y: 220, type: "branch", prereqs: ["stilstaand","rijdend","rolhouding","durven"], branch: "transition" },
+  { id: "rotatie",       label: "Rotatie",                              x: 35+PAD,  y: 390, type: "core", prereqs: ["draaien"] },
+  { id: "contrarotatie", label: "Contra-", sublabel: "rotatie",         x: 100+PAD, y: 390, type: "core", prereqs: ["draaien"] },
+  { id: "voor-achter",   label: "Voor-Achter",                          x: 148+PAD, y: 390, type: "core", prereqs: ["balans"] },
+  { id: "tip-hielen",    label: "Tip-Hielen",                           x: 208+PAD, y: 390, type: "core", prereqs: ["balans"] },
+  { id: "hoog-laag",     label: "Hoog-Laag",                            x: 178+PAD, y: 465, type: "core", prereqs: ["balans"] },
+  { id: "sprong",        label: "Sprong",                               x: 258+PAD, y: 390, type: "core", prereqs: ["springen"] },
+  { id: "ollie",         label: "Ollie",                                x: 318+PAD, y: 390, type: "core", prereqs: ["springen"] },
+  { id: "grind",         label: "Grind",                                x: 375+PAD, y: 390, type: "core", prereqs: ["obstakels"] },
+  { id: "slide",         label: "Slide",                                x: 435+PAD, y: 390, type: "core", prereqs: ["obstakels"] },
+  { id: "kickflip",      label: "Kickflip",                             x: 492+PAD, y: 390, type: "core", prereqs: ["flips"] },
+  { id: "heelflip",      label: "Heelflip",                             x: 552+PAD, y: 390, type: "core", prereqs: ["flips"] },
+  { id: "scoop-core",    label: "Scoop",                                x: 625+PAD, y: 390, type: "core", prereqs: ["scoop"] },
+  { id: "nollie",        label: "Nollie",                               x: 698+PAD, y: 390, type: "core", prereqs: ["stances"] },
+  { id: "switch",        label: "Switch",                               x: 758+PAD, y: 390, type: "core", prereqs: ["stances"] },
+  { id: "fakie",         label: "Fakie",                                x: 728+PAD, y: 465, type: "core", prereqs: ["stances"] },
+  { id: "trans-core",    label: "Transition", sublabel: "skills",       x: 845+PAD, y: 390, type: "core", prereqs: ["transition"] },
 ]
 
 const BRANCHES: Branch[] = ["draaien","balans","springen","obstakels","flips","scoop","stances","transition"]
-const TRUNK_Y_VAL = 130
-const TRUNK_X = 450
+const TRUNK_Y_VAL = 140
+const TRUNK_X = 450 + PAD
 const typeRadius: Record<NodeType, number> = { foundation: 22, branch: 18, core: 13 }
 
 function buildPath(x1: number, y1: number, x2: number, y2: number) {
@@ -90,7 +92,9 @@ function TreeSVG({ nodes, selectedBranch, unlocked, onNodeClick }: {
       {nodes.map(n => {
         const pos = posMap[n.id]; if (!pos) return null
         const { x, y } = pos
-        const col = n.branch ? (selectedBranch === n.branch ? branchColor[n.branch] : branchColor[n.branch] + "80") : (unlocked.has(n.id) ? "#BA7517" : "#52525b")
+        const col = n.branch
+          ? (selectedBranch === n.branch ? branchColor[n.branch] : branchColor[n.branch] + "80")
+          : (unlocked.has(n.id) ? "#BA7517" : "#52525b")
         const r = typeRadius[n.type]
         const isSelected = n.branch && selectedBranch === n.branch
         return (
@@ -112,15 +116,15 @@ export default function TrickTree() {
   const [activeBranch, setActiveBranch] = useState<Branch>("draaien")
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null)
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set(["stilstaand", "rijdend"]))
-
-  // pan + zoom — contained inside the tree box only
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
+
+  // refs for gesture tracking
   const isPinching = useRef(false)
   const lastDist = useRef(0)
-  const lastPan = useRef({ x: 0, y: 0 })
-  const isDragging = useRef(false)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const dragStart = useRef<{ x: number; y: number } | null>(null)
+  const panStart = useRef({ x: 0, y: 0 })
+  const moved = useRef(false) // distinguish tap from drag
 
   function resetView() { setPan({ x: 0, y: 0 }); setScale(1) }
 
@@ -129,62 +133,84 @@ export default function TrickTree() {
     else setUnlocked(prev => { const n = new Set(prev); n.has(node.id) ? n.delete(node.id) : n.add(node.id); return n })
   }
 
-  // Touch: pinch zoom + single finger pan, only fires inside the tree container
-  function onTouchStart(e: React.TouchEvent) {
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2) {
       e.preventDefault()
       isPinching.current = true
-      lastDist.current = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
-    } else if (e.touches.length === 1) {
-      isDragging.current = true
-      lastPan.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      dragStart.current = null
+      lastDist.current = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      )
+    } else if (e.touches.length === 1 && !isPinching.current) {
+      dragStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      panStart.current = { ...pan }
+      moved.current = false
     }
-  }
+  }, [pan])
 
-  function onTouchMove(e: React.TouchEvent) {
-    if (e.touches.length === 2 && isPinching.current) {
-      e.preventDefault()
-      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
-      const delta = dist / lastDist.current
-      lastDist.current = dist
-      setScale(prev => Math.min(Math.max(prev * delta, 0.4), 3))
-    } else if (e.touches.length === 1 && isDragging.current && !isPinching.current) {
-      e.preventDefault()
-      const dx = e.touches[0].clientX - lastPan.current.x
-      const dy = e.touches[0].clientY - lastPan.current.y
-      lastPan.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-      setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }))
-    }
-  }
-
-  function onTouchEnd(e: React.TouchEvent) {
-    if (e.touches.length < 2) isPinching.current = false
-    if (e.touches.length === 0) isDragging.current = false
-  }
-
-  function onWheel(e: React.WheelEvent) {
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
     e.preventDefault()
-    setScale(prev => Math.min(Math.max(prev * (e.deltaY > 0 ? 0.9 : 1.1), 0.4), 3))
-  }
+    if (e.touches.length === 2 && isPinching.current) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      )
+      const ratio = dist / lastDist.current
+      lastDist.current = dist
+      // Dampen zoom slightly so it's less jumpy
+      const dampened = 1 + (ratio - 1) * 0.7
+      setScale(prev => Math.min(Math.max(prev * dampened, 0.35), 3))
+    } else if (e.touches.length === 1 && dragStart.current && !isPinching.current) {
+      const dx = e.touches[0].clientX - dragStart.current.x
+      const dy = e.touches[0].clientY - dragStart.current.y
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved.current = true
+      // Dampen pan so it doesn't overshoot
+      setPan({ x: panStart.current.x + dx * 0.85, y: panStart.current.y + dy * 0.85 })
+    }
+  }, [])
 
-  function onMouseDown(e: React.MouseEvent) { isDragging.current = true; lastPan.current = { x: e.clientX, y: e.clientY } }
-  function onMouseMove(e: React.MouseEvent) {
-    if (!isDragging.current) return
-    const dx = e.clientX - lastPan.current.x; const dy = e.clientY - lastPan.current.y
-    lastPan.current = { x: e.clientX, y: e.clientY }
-    setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }))
-  }
-  function onMouseUp() { isDragging.current = false }
+  const onTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length < 2) isPinching.current = false
+    if (e.touches.length === 0) dragStart.current = null
+  }, [])
 
-  const branchNodes = ALL_NODES.filter(n => n.type === "foundation" || n.id === activeBranch || n.prereqs.includes(activeBranch))
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault()
+    setScale(prev => Math.min(Math.max(prev * (e.deltaY > 0 ? 0.92 : 1.08), 0.35), 3))
+  }, [])
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    dragStart.current = { x: e.clientX, y: e.clientY }
+    panStart.current = { ...pan }
+    moved.current = false
+  }, [pan])
+
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragStart.current) return
+    const dx = e.clientX - dragStart.current.x
+    const dy = e.clientY - dragStart.current.y
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved.current = true
+    setPan({ x: panStart.current.x + dx, y: panStart.current.y + dy })
+  }, [])
+
+  const onMouseUp = useCallback(() => { dragStart.current = null }, [])
+
+  const branchNodes = ALL_NODES.filter(n =>
+    n.type === "foundation" || n.id === activeBranch || n.prereqs.includes(activeBranch)
+  )
+
   const selectedTricks = selectedBranch ? getTricksByBranch(selectedBranch) : []
-  const tricksByLevel = selectedTricks.reduce((acc, t) => { if (!acc[t.level]) acc[t.level] = []; acc[t.level].push(t); return acc }, {} as Record<number, typeof selectedTricks>)
+  const tricksByLevel = selectedTricks.reduce((acc, t) => {
+    if (!acc[t.level]) acc[t.level] = []
+    acc[t.level].push(t)
+    return acc
+  }, {} as Record<number, typeof selectedTricks>)
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
       <div className="max-w-6xl mx-auto px-2 py-4 space-y-3">
 
-        {/* Mode toggle */}
         <div className="flex items-center gap-2">
           <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1">
             {(["branch","full"] as const).map(m => (
@@ -198,9 +224,8 @@ export default function TrickTree() {
           )}
         </div>
 
-        {/* Branch pills */}
         {mode === "branch" && (
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: "touch" }}>
             {BRANCHES.map(b => (
               <button key={b} onClick={() => { setActiveBranch(b); setSelectedBranch(null) }}
                 className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-all"
@@ -214,19 +239,27 @@ export default function TrickTree() {
         )}
 
         <div className="flex gap-4 items-start">
-          {/* Tree container — zoom/pan is ONLY active inside here */}
           <div className="flex-1 min-w-0">
             {mode === "branch" ? (
               <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-                <TreeSVG nodes={branchNodes} selectedBranch={activeBranch} unlocked={unlocked}
-                  onNodeClick={n => { if (n.branch) setSelectedBranch(prev => prev === n.branch ? null : n.branch!); else setUnlocked(prev => { const nx = new Set(prev); nx.has(n.id) ? nx.delete(n.id) : nx.add(n.id); return nx }) }}
+                <TreeSVG
+                  nodes={branchNodes} selectedBranch={activeBranch}
+                  unlocked={unlocked}
+                  onNodeClick={n => {
+                    if (n.branch) setSelectedBranch(prev => prev === n.branch ? null : n.branch!)
+                    else setUnlocked(prev => { const nx = new Set(prev); nx.has(n.id) ? nx.delete(n.id) : nx.add(n.id); return nx })
+                  }}
                 />
               </div>
             ) : (
               <div
-                ref={containerRef}
-                className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden cursor-grab active:cursor-grabbing select-none"
-                style={{ height: H, position: "relative" }}
+                className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden select-none relative"
+                style={{
+                  height: H,
+                  // Block page scroll when touching inside this box
+                  touchAction: "none",
+                  cursor: dragStart.current ? "grabbing" : "grab",
+                }}
                 onTouchStart={onTouchStart}
                 onTouchMove={onTouchMove}
                 onTouchEnd={onTouchEnd}
@@ -241,22 +274,24 @@ export default function TrickTree() {
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
                   transformOrigin: "center center",
                   width: W, height: H,
-                  willChange: "transform"
+                  willChange: "transform",
+                  pointerEvents: "auto",
                 }}>
                   <TreeSVG nodes={ALL_NODES} selectedBranch={selectedBranch} unlocked={unlocked} onNodeClick={handleNodeClick} />
                 </div>
                 <div className="absolute bottom-2 right-3 text-xs text-zinc-600 pointer-events-none">
-                  Pinch / scroll to zoom · drag to pan
+                  Pinch · scroll · drag
                 </div>
               </div>
             )}
           </div>
 
-          {/* Side panel */}
           {selectedBranch && (
             <div className="w-64 flex-shrink-0">
               <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden sticky top-4">
-                <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between" style={{ borderLeftWidth: 3, borderLeftColor: branchColor[selectedBranch] }}>
+                <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between"
+                  style={{ borderLeftWidth: 3, borderLeftColor: branchColor[selectedBranch] }}
+                >
                   <div>
                     <h3 className="font-bold text-sm">{branchLabel[selectedBranch]}</h3>
                     <p className="text-zinc-500 text-xs">{selectedTricks.length} tricks</p>
