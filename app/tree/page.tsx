@@ -15,7 +15,7 @@ type TrickNode = {
 const BRANCHES: Branch[] = ["draaien","balans","springen","obstakels","flips","scoop","stances","transition"]
 
 // Core skills per branch
-const BRANCH_CORES: Record<Branch, { id: string; label: string; sublabel?: string }[]> = {
+const BRANCH_CORES: Record<Exclude<Branch, "foundation">, { id: string; label: string; sublabel?: string }[]> = {
   draaien:    [{ id: "rotatie", label: "Rotatie" }, { id: "contrarotatie", label: "Contra-rotatie" }],
   balans:     [{ id: "voor-achter", label: "Voor-Achter" }, { id: "tip-hielen", label: "Tip-Hielen" }, { id: "hoog-laag", label: "Hoog-Laag" }],
   springen:   [{ id: "sprong", label: "Sprong" }, { id: "ollie", label: "Ollie" }],
